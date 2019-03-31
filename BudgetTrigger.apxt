@@ -1,0 +1,36 @@
+trigger BudgetTrigger on Budget__c (before insert, before update, before delete) {
+    if (Trigger.isBefore) {
+        if (Trigger.isDelete) {
+            // check if there are any transactions in the relevant month (Trigger.old)
+            // if so, prevent deletion (throw error)
+            BudgetTriggerMethods.preventBudgetLeavingTransactions(Trigger.old);
+        }
+        if (Trigger.isUpdate) {
+            // make sub-list of budgets where the month/year change
+            // run check on that sub-list to make sure the budget isn't leaving behind transactions
+            // if so, prevent update (throw error)
+            List<Budget__c> relevantBudgets = new List<Budget__c>();
+            for (Budget__c b : Trigger.old) {
+                if (b.BudgetMonth__c != Trigger.newMap.get(b.Id).BudgetMonth__c.toStartOfMonth()) {
+                    relevantBudgets.add(b);
+                }
+            }
+            BudgetTriggerMethods.preventBudgetLeavingTransactions(relevantBudgets);
+            
+            // run check on that sub-list to make sure there aren't any duplicates
+            // if so, prevent update (throw error)
+            relevantBudgets.clear();
+            for (Budget__c b : Trigger.new) {
+                if (b.BudgetMonth__c.toStartOfMonth() != Trigger.oldMap.get(b.Id).BudgetMonth__c) {
+                    relevantBudgets.add(b);
+                }
+            }
+            BudgetTriggerMethods.preventBudgetDuplicates(relevantBudgets);
+        }
+        if (Trigger.isInsert) {
+            // make sure there aren't any duplicates
+            // if so, prevent insert (throw error)
+            BudgetTriggerMethods.preventBudgetDuplicates(Trigger.New);
+        }
+    }
+}

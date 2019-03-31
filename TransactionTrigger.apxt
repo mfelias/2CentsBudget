@@ -1,0 +1,20 @@
+trigger TransactionTrigger on Transaction__c (after insert, after update) {
+    if (Trigger.isAfter) {
+        if (Trigger.isInsert) {
+            // if inserting new transactions, run check to make sure budgets exist
+            TransactionTriggerMethods.checkTransactionMonthBudgetExists(Trigger.new);
+        } else if (Trigger.isUpdate) {
+            // if updating existing transactions
+            // make sub-list of transactions where month/year are different
+            List<Transaction__c> relevantTransactions = new List<Transaction__c>();
+            // loop through Trigger.new and Trigger.old
+            for (Transaction__c newTransaction : Trigger.new) {
+                if (newTransaction.TransactionDate__c.toStartOfMonth() != Trigger.oldMap.get(newTransaction.Id).TransactionDate__c.toStartOfMonth()) {
+                    relevantTransactions.add(newTransaction);
+                }
+            }
+            TransactionTriggerMethods.checkTransactionMonthBudgetExists(relevantTransactions);
+        }
+        
+    }
+}

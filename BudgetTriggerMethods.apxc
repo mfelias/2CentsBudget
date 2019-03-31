@@ -1,0 +1,96 @@
+public class BudgetTriggerMethods {
+    public static void preventBudgetLeavingTransactions(List<Budget__c> oldBudgets) {
+        // make map of budget ownerid and date
+        Map<ID, Set<Date>> budgetInfo = new Map<ID, Set<Date>>();
+        
+        // loop through each budget with relevant OwnerId (from query)
+        for (Budget__c b : oldBudgets) {
+            // check if a budget from the same user is already in the map
+            if (budgetInfo.containsKey(b.OwnerId)) {
+                // if there is, add month of budget to set of months associated with ownerId in map
+                budgetInfo.get(b.OwnerId).add(b.BudgetMonth__c);
+                
+                /*
+                // if there is, check to see if a budget from that month is already in the map
+                if (!budgetInfo.get(b.OwnerId).contains(b.BudgetMonth__c)) {
+                // if not, add that month to the map associated with the ownerID
+                budgetInfo.get(b.OwnerId).add(b.BudgetMonth__c);
+                }
+                */
+            } else {
+                // if the list doesn't have another budget from the same user, add it and the date to the map
+                Set<Date> newDateSet = new Set<Date> {b.BudgetMonth__c};
+                    budgetInfo.put(b.OwnerId, newDateSet);
+            }
+        } // end of budgetInfo gathering loop
+        
+        // query for all transactions with relevant ownerIDs
+        Set<Transaction__c> existingTransactions = new Set<Transaction__c> ([SELECT OwnerId, TransactionDate__c FROM Transaction__c WHERE OwnerId IN :budgetInfo.keySet()]);
+        // if none, proceed without doing anything
+        // so really: if there are some, create the map of transaction ownerID and month
+        // then loop through and if there are transactions for that month, add error to budget
+        if (!existingTransactions.isEmpty()) {
+            // make map of transaction ownerid and date
+            Map<ID, Set<Date>> transactionInfo = new Map<ID, Set<Date>>();
+            // loop through existing transaction and pull ownerId and date info
+            for (Transaction__c t : existingTransactions) {
+                if (transactionInfo.containsKey(t.OwnerId)) {
+                    transactionInfo.get(t.OwnerId).add(t.TransactionDate__c.toStartOfMonth());
+                } else {
+                    Set<Date> newDateSet = new Set<Date> {t.TransactionDate__c.toStartOfMonth()};
+                    transactionInfo.put(t.OwnerId, newDateSet);
+                }
+            } // end transaction info gathering loop
+            
+            // loop through budgets
+            // if there are transactions for that ownerId and month, add error
+            for (Budget__c b : oldBudgets) {
+                if (transactionInfo.containsKey(b.OwnerId)) {
+                    // determine if there is a transaction for the budget month
+                    if (transactionInfo.get(b.OwnerId).contains(b.BudgetMonth__c)) {
+                        b.addError('ERROR: Budget has associated Transactions. Cannot be deleted/cannot change budget month.');
+                    }
+                }
+            } // end loop through budgets looking for potential associated transactions that shouldn't be abandoned
+        } // end actions if there are associated budgets        
+    } // end preventBudgetLeavingTransactions method
+    
+    public static void preventBudgetDuplicates(List<Budget__c> changingBudgets) {
+        Map<ID, Set<Date>> changingBudgetInfo = new Map<ID, Set<Date>>();
+
+		// loop through each budget with relevant OwnerId (from query)
+        for (Budget__c b : changingBudgets) {
+            // check if a budget from the same user is already in the map
+            if (changingBudgetInfo.containsKey(b.OwnerId)) {
+                // if there is, add month of budget to set of months associated with ownerId in map
+                changingBudgetInfo.get(b.OwnerId).add(b.BudgetMonth__c);
+            } else {
+                // if the list doesn't have another budget from the same user, add it and the date to the map
+                Set<Date> newDateSet = new Set<Date> {b.BudgetMonth__c};
+                changingBudgetInfo.put(b.OwnerId, newDateSet);
+            }
+        } // end of budgetInfo gathering loop
+        
+        Set<Budget__c> existingBudgets = new Set<Budget__c> ([SELECT OwnerId, BudgetMonth__c FROM Budget__c WHERE OwnerId IN :changingBudgetInfo.KeySet()]);
+        
+        if (!existingBudgets.isEmpty()) {
+            Map<ID, Set<Date>> existingBudgetInfo = new Map<ID, Set<Date>>();
+            for (Budget__c b : existingBudgets) {
+                if (existingBudgetInfo.containsKey(b.OwnerId)) {
+                    existingBudgetInfo.get(b.OwnerId).add(b.BudgetMonth__c);
+                } else {
+                    Set<Date> newDateSet = new Set<Date> {b.BudgetMonth__c};
+                    existingBudgetInfo.put(b.OwnerId, newDateSet);
+                }
+            } // end existingBudgetInfo gathering loop
+            
+            for (Budget__c b : changingBudgets) {
+                if (existingBudgetInfo.containsKey(b.OwnerId)) {
+                    if (existingBudgetInfo.get(b.OwnerId).contains(b.BudgetMonth__c)) {
+                        b.addError('ERROR: A budget already exists for the target month.');
+                    }
+                }
+            } // end addError loop
+        } // end if there are existing relevant budgets    
+    } // end preventBudgetDuplicates method
+}
