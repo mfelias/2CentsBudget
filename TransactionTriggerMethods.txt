@@ -1,0 +1,100 @@
+public class TransactionTriggerMethods {
+    public static void checkTransactionMonthBudgetExists(List<Transaction__c> transactionList) {
+        // define map to store OwnerId and all associated months from transactions
+        Map<ID, Set<Date>> transactionInfo = new Map<ID, Set<Date>>();
+        
+        // loop through each transaction being added/updated (from the trigger)
+        for (Transaction__c t : transactionList) {
+            // check if a transaction from the same user is already in the map
+            if (transactionInfo.containsKey(t.OwnerId)) {
+                // if there is, add month of transaction to set of months associated with ownerId in map
+                transactionInfo.get(t.OwnerId).add(t.TransactionDate__c.toStartOfMonth());
+
+                /*
+                // if there is, check to see if a transaction from that month is already in the map
+                if (!transactionInfo.get(t.OwnerId).contains(t.TransactionDate__c.toStartOfMonth())) {
+                    // if not, add that month to the map associated with the ownerID
+                    transactionInfo.get(t.OwnerId).add(t.TransactionDate__c.toStartOfMonth());
+                }
+				*/
+            } else {
+                // if the list doesn't have another transaction from the same user, add it and the date to the map
+                Set<Date> newDateSet = new Set<Date> {t.TransactionDate__c.toStartOfMonth()};
+                transactionInfo.put(t.OwnerId, newDateSet);
+            }
+        } // end of transactionInfo gathering loop
+        
+        // query for all budgets in database with relevant OwnerIDs
+        Set<Budget__c> existingBudgets = new Set<Budget__c> ([SELECT OwnerId, BudgetMonth__c FROM Budget__c WHERE OwnerId IN :transactionInfo.keySet()]);
+        
+        // define new list of budgets to be added to the database
+        List<Budget__c> newBudgets = new List<Budget__c>();
+        //Set<Budget__c> newBudgets = new Set<Budget__c>();
+
+        
+        // if owners have no budgets, go ahead and add all necessary budgets
+        if (existingBudgets.isEmpty()) {
+            // loop through transaction info and make necessary budgets
+            for (ID tid : transactionInfo.keySet()) {
+                for (Date td : transactionInfo.get(tid)) {
+                    Budget__c newBudget = new Budget__c(BudgetMonth__c=td, OwnerId=tid);
+                    newBudgets.add(newBudget);
+                }
+            } // end loop for adding budgets if no budgets returned from query
+        } else { // if owner has budgets, pull relevant info into new map
+            
+            // define map to store OwnerId and all associated months from budgets in database with OwnerIds from map of transactions        
+            Map<ID, Set<Date>> budgetInfo = new Map<ID, Set<Date>>();
+            
+            // loop through each budget with relevant OwnerId (from query)
+            for (Budget__c b : existingBudgets) {
+                // check if a budget from the same user is already in the map
+                if (budgetInfo.containsKey(b.OwnerId)) {
+                    // if there is, add month of budget to set of months associated with ownerId in map
+                    budgetInfo.get(b.OwnerId).add(b.BudgetMonth__c);
+    
+                    /*
+                    // if there is, check to see if a budget from that month is already in the map
+                    if (!budgetInfo.get(b.OwnerId).contains(b.BudgetMonth__c)) {
+                        // if not, add that month to the map associated with the ownerID
+                        budgetInfo.get(b.OwnerId).add(b.BudgetMonth__c);
+                    }
+                    */
+                } else {
+                    // if the list doesn't have another budget from the same user, add it and the date to the map
+                    Set<Date> newDateSet = new Set<Date> {b.BudgetMonth__c};
+                    budgetInfo.put(b.OwnerId, newDateSet);
+                }
+            } // end of budgetInfo gathering loop
+            
+            // compare transaction and budget info
+            // loop through transactions
+            for (ID tid : transactionInfo.keySet()) {
+                // if there aren't any budgets from user, add all relevant budgets
+                if (!budgetInfo.keySet().contains(tid)) {
+                   for (Date td : transactionInfo.get(tid)) {
+                        Budget__c newBudget = new Budget__c(BudgetMonth__c=td, OwnerId=tid);
+                        newBudgets.add(newBudget);
+                    } 
+                } else { // there are budgets for that owner
+                    // loop through transaction dates and add budget if there isn't a month for it
+                	for (Date td : transactionInfo.get(tid)) {
+                        // if relevant date doesn't exist in date list for relevant ownerID
+                        if (!budgetInfo.get(tid).contains(td)) {
+                            // create and add budget to the list
+                            Budget__c newBudget = new Budget__c(BudgetMonth__c=td, OwnerId=tid);
+                        	newBudgets.add(newBudget);
+                        } 
+                    }
+                }
+            } // end loop for adding budgets if query returns some budgets   
+        } // end if statement for if there are budgets 
+        
+        try {
+            // add new budgets to the database
+        	insert newBudgets;
+        } catch (DmlException e) {
+            System.debug('An unexpected error has occured: ' + e.getMessage());
+        }
+	} // end checkTransactionMonthBudgetExists method
+} // end class
